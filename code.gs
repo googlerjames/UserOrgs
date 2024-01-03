@@ -23,7 +23,7 @@
 const PROJECT_ID = "YOUR_PROJECT_ID"; // Replace with your actual BigQuery project ID
 const DATASET_ID = "YOUR_DATASET_ID"; // Replace with your actual BigQuery dataset ID. If the dataset does not exist one will be created
 const TABLE_ID = "YOUR_TABLE_ID" // Replace with your Table ID. If the Table does not exist one will be created
-const DOMAIN = "" //Replace with your domain ex: altostrat.com
+const DOMAIN = "YOUR_DOMAIN" //Replace with your domain ex: altostrat.com
 const APPEND = false //Will use insert/update if false
 
 
