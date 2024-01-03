@@ -28,9 +28,7 @@ const APPEND = false //Will use insert/update if false
 
 
 /**
- * Uploads a single sheet to BigQuery.
- *
- * 
+ * Uploads Domain user info to BigQuery.
  * @return {string} status - Returns the status of the job.
  */
 function DirectoryToBigQuery() {
