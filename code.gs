@@ -1,7 +1,7 @@
 /*
  * THIS IS SAMPLE CODE
  *
- * Copyright 2023 Google
+ * Copyright 2024 Google
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,28 +18,35 @@
  * Author James Ferreira
  */
 
+
 // BigQuery project, dataset, and table configuration
 const PROJECT_ID = "YOUR_PROJECT_ID"; // Replace with your actual BigQuery project ID
-const DATASET_ID = "YOUR_DATASET_ID"; // Replace with your actual BigQuery dataset ID
-const TABLE_ID = "YOUR_TABLE_ID"; // Replace with your actual BigQuery table ID
+const DATASET_ID = "YOUR_DATASET_ID"; // Replace with your actual BigQuery dataset ID. If the dataset does not exist one will be created
+const TABLE_ID = "YOUR_TABLE_ID" // Replace with your Table ID. If the Table does not exist one will be created
+const DOMAIN = "" //Replace with your domain ex: altostrat.com
+const APPEND = false //Will use insert/update if false
+
 
 /**
- * Lists all the users in a domain sorted by first name and saves the data to BigQuery.
+ * Uploads a single sheet to BigQuery.
+ *
+ * 
+ * @return {string} status - Returns the status of the job.
  */
-function listAllUsersAndSaveToBigQuery() {
+function DirectoryToBigQuery() {
+  
   // Initialize an empty array to store user data
-  var values = [];
+  var people = [];
 
   // Page token for iterating through user lists
   var pageToken;
-
   var page;
 
   // Loop through pages of users
   do {
     // Retrieve a page of users using Admin Directory API
     page = AdminDirectory.Users.list({
-      domain: 'altostrat.com', // Replace 'altostrat.com' with your actual domain
+      domain: DOMAIN, 
       orderBy: 'givenName', // Sort users by first name
       maxResults: 100, // Limit results per page to 100
       pageToken: pageToken // Use page token for subsequent requests
@@ -55,16 +62,12 @@ function listAllUsersAndSaveToBigQuery() {
         var user = users[i]; // Get the current user
 
         // Extract relevant user information
-        var fullName = user.name.fullName;
-        var primaryEmail = user.primaryEmail;
-        var orgUnitPath = user.orgUnitPath;
+        var fullName = '"'+user.name.fullName+'"';
+        var primaryEmail = '"'+user.primaryEmail+'"';
+        var orgUnitPath = '"'+user.orgUnitPath+'"';
 
         // Create an object with user data for each row in the BigQuery table
-        values.push({
-          fullName: fullName,
-          primaryEmail: primaryEmail,
-          orgUnitPath: orgUnitPath
-        });
+        people.push([fullName,primaryEmail,orgUnitPath]);
       }
     } else {
       // Log a message if no users were found on this page
@@ -75,22 +78,79 @@ function listAllUsersAndSaveToBigQuery() {
     pageToken = page.nextPageToken;
   } while (pageToken); // Continue iterating until no more pages are available
 
-  // Create a BigQuery client instance
-  const bigquery = BigQueryApp.getService();
+  try {
+    createDatasetIfDoesntExist(PROJECT_ID, DATASET_ID);
+  } catch (e) {
+    return `${e}: Please verify your "Project ID" exists and you have permission to edit BigQuery`;
+  }
 
-  // Define the schema for the BigQuery table
-  const schema = bigquery.newTableSchema()
-    .addColumn('fullName', 'STRING') // Define a column for full name with data type string
-    .addColumn('primaryEmail', 'STRING') // Define a column for primary email with data type string
-    .addColumn('orgUnitPath', 'STRING'); // Define a column for org unit path with data type string
+  // Create the BigQuery load job config. For more information, see:
+  // https://developers.google.com/apps-script/advanced/bigquery
+  let loadJob = {
+    configuration: {
+      load: {
+        destinationTable: {
+          projectId: PROJECT_ID,
+          datasetId: DATASET_ID,
+          tableId: TABLE_ID
+        },
+        schema: {
+          fields: [
+            {name: 'fullName', type: 'STRING'},
+            {name: 'primaryEmail', type: 'STRING'},
+            {name: 'orgUnitPath', type: 'STRING'}
+          ]
+        },
+        autodetect: true,  // Infer schema from contents.
+        writeDisposition: APPEND ? 'WRITE_APPEND' : 'WRITE_TRUNCATE',
+      }
+    }
+  };
 
-  // Create or replace the BigQuery table
-  const table = bigquery.createTable(projectId, datasetId, tableId, schema);
+  // BigQuery load jobs can only load files, so we need to transform our
+  // rows (matrix of values) into a blob (file contents as string).
+  // For convenience, we convert the rows into a CSV data string.
+  // https://cloud.google.com/bigquery/docs/loading-data-local
+  let csvRows = people
+  let csvData = csvRows.map(values => values.join(',')).join('\n');
+  let blob = Utilities.newBlob(csvData, 'application/octet-stream');
 
-  // Insert the collected user data into the BigQuery table
-  table.insertRows(values);
+  // Run the BigQuery load job.
+  try {
+    BigQuery.Jobs.insert(loadJob, PROJECT_ID, blob);
+  } catch (e) {
+    return e;
+  }
 
-  // Log a message indicating successful data insertion
-  Logger.log('User data successfully saved to BigQuery.');
+  Logger.log(
+    'Load job started. Click here to check your jobs: ' +
+    `https://console.cloud.google.com/bigquery?project=${PROJECT_ID}&page=jobs`
+  );
+
+  // The status of a successful run contains the timestamp.
+  return `Last run: ${new Date()}`;
 }
-adding code file
+
+
+
+/**
+ * Creates a dataset if it doesn't exist, otherwise does nothing.
+ *
+ * @param {string} projectId - Google Cloud Project ID.
+ * @param {string} datasetId - BigQuery Dataset ID.
+ */
+function createDatasetIfDoesntExist(projectId, datasetId) {
+  try {
+    BigQuery.Datasets.get(projectId, datasetId);
+  } catch (err) {
+    let dataset = {
+      datasetReference: {
+        projectId: projectId,
+        datasetId: datasetId,
+      },
+    };
+    BigQuery.Datasets.insert(dataset, projectId);
+    Logger.log(`Created dataset: ${projectId}:${datasetId}`);
+  }
+}
+
